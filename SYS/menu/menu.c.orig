@@ -1,0 +1,420 @@
+#include "sys.h"
+
+//模式切换标志位
+uint8_t mode_selection = 0;
+//页面显示标志位
+uint8_t displayFlag = 0;
+//阈值设置标志位
+uint8_t thresholdFlag = 0;
+//手动模式标志位
+uint8_t  manualFlag = 0;
+
+/*****************贯穿整个系统的函数 在主函数只需要调用这一个函数*/
+
+void Mode_selection(void)
+{
+    //调用执行设备函数 此函数不能删除
+    Action();
+
+    //按键1 按下模式切换
+    if ((isKey1) && (displayFlag == 0)) {
+		isKey1 = isKey2 = isKey3 = isKey4 =0;
+        mode_selection++;
+        oled_Clear();
+		if(mode_selection==2){//进入手动模式时，开关标志位清零
+			System.Switch1 = System.Switch2 = System.Switch3 = System.Switch4 = 0;
+		}
+    }
+	
+	if ((isKey1) && (displayFlag != 0)) {
+        displayFlag = 0;
+        isKey1 = 0;
+        oled_Clear();
+    }
+	
+    //模式切换标志位限位
+    if (mode_selection >= 3) {
+        mode_selection = 0;
+    }
+
+    //根据标志位判断进入哪一个模式  手动模式下不调用自动控制函数其余可以调用
+    switch (mode_selection) {
+    case 0:
+        Display();//传感器数据显示
+        Automatic();//自动控制
+        break;
+
+    case 1:
+        Threshold_Settings();//阈值设置
+        Automatic();//自动控制
+        break;
+
+    case 2:
+        Manual();//手动模式
+        break;
+    }
+}
+
+/****
+自动控制逻辑判断
+****/
+
+void Automatic(void)
+{
+	if (SensorData.TempVal >= Threshold.TempThreshold) {//如果温度大于阈值
+		System.Switch1 = 1;//继电器-风扇开关标志位置1
+	} else {
+		System.Switch1 = 0;//继电器-风扇开关标志位置0
+	}
+	
+	if (SensorData.SoilVal <= Threshold.SoilThreshold) {//如果土壤湿度小于阈值
+		System.Switch2 = 1;//继电器-水泵开关标志位置1
+		System.Switch4 = 1;//报警标志位置1
+	} else {
+		System.Switch2 = 0;//继电器-水泵开关标志位置0
+		System.Switch4 = 0;//报警标志位置0
+	}
+	
+	if (SensorData.LightVal <= Threshold.LightThreshold) {//如果光照强度小于阈值
+		System.Switch3 = 1;//灯光标志位置1
+	} else {
+		System.Switch3 = 0;//灯光标志位置0
+	}
+}
+
+/****
+根据执行设备的标志位来开关执行设备
+****/
+
+void Action(void)
+{
+    if (System.Switch1 == 1) {//继电器-风扇开关标志位为1
+        RELAY1_ON;//打开继电器-风扇
+    } else {
+        RELAY1_OFF;//关闭继电器-风扇
+    }
+	
+	if (System.Switch2 == 1) {//继电器-水泵开关标志位为1
+        RELAY2_ON;//打开继电器-水泵
+    } else {
+        RELAY2_OFF;//关闭继电器-水泵
+    }
+	
+    if (System.Switch3 == 1) {//灯光标志位为1
+		LED1_ON;//打开灯光
+    } else {
+		LED1_OFF;//关闭灯光
+    }
+	
+	if (System.Switch4 == 1) {//报警标志位为1
+		BEEP_ON;//打开蜂鸣器
+    } else {
+		BEEP_OFF;//关闭蜂鸣器
+    }
+}
+
+/****
+传感器数据显示
+****/
+
+void Display(void)
+{
+	if (isKey3) {
+        isKey3 = 0;
+        oled_Clear();
+        displayFlag = 2;
+    }
+
+    if (isKey4) {
+        isKey4 = 0;
+        oled_Clear();
+        displayFlag = 3;
+    }
+	if(displayFlag == 0)
+	{
+		//智能浇花
+		oled_ShowCHinese(16 * 2, 2 * 0, 0);
+		oled_ShowCHinese(16 * 3, 2 * 0, 1);
+		oled_ShowCHinese(16 * 4, 2 * 0, 2);
+		oled_ShowCHinese(16 * 5, 2 * 0, 3);
+		
+		//温度
+		oled_ShowCHinese(16 * 0, 2 * 1, 25);
+		oled_ShowCHinese(16 * 1, 2 * 1, 26);
+		oled_ShowString(16 * 3, 2 * 1, ":", 16);
+		oled_ShowNum(16 * 4, 2 * 1, SensorData.TempVal, 2, 16);//显示温度数据
+		oled_ShowCHinese(16 * 5, 2 * 1, 27);
+		
+		//土壤
+		oled_ShowCHinese(16 * 0, 2 * 2, 20);
+		oled_ShowCHinese(16 * 1, 2 * 2, 21);
+		oled_ShowString(16 * 3, 2 * 2, ":", 16);
+		oled_ShowNum(16 * 4, 2 * 2, SensorData.SoilVal, 2, 16);//显示土壤湿度数据
+		oled_ShowString(16 * 5, 2 * 2, "%RH", 16);
+		
+		//光照
+		oled_ShowCHinese(16 * 0, 2 * 3, 17);
+		oled_ShowCHinese(16 * 1, 2 * 3, 24);
+		oled_ShowString(16 * 3, 2 * 3, ":", 16);
+		oled_ShowNum(16 * 4, 2 * 3, SensorData.LightVal, 4, 16);//显示光照强度数据
+		oled_ShowString(16 * 6, 2 * 3, "Lux", 16);
+	}
+	
+	//调用显示mqtt连接状态参数
+    if (displayFlag == 2) {
+		MqttCon_Display();
+    }
+
+	//调用显示订阅主题的参数
+    if (displayFlag == 3) {
+		Topic_Display();
+    }
+}
+
+/****
+阈值设置
+****/
+void Threshold_Settings(void)
+{
+    //按键2按下选中设置阈值
+    if (isKey2) {
+        isKey2 = 0;
+        thresholdFlag++;
+
+        //限位标志 总数-1
+        if (thresholdFlag >= 3) {
+            thresholdFlag = 0;
+        }
+    }
+
+    //调用光标显示函数
+    Asterisk(thresholdFlag);
+
+    //按键3按下阈值加
+    if (isKey3) {
+        isKey3 = 0;//清除按键3标志位
+
+        switch (thresholdFlag) {
+        case 0:
+            Threshold.TempThreshold ++;//温度阈值+1
+            break;
+		case 1:
+			Threshold.SoilThreshold ++;//土壤湿度阈值+1
+            break;
+		case 2:
+			Threshold.LightThreshold +=10;//光照强度阈值+10
+            break;
+        }
+    }
+
+    //按键4按下阈值减
+    if (isKey4) {
+        isKey4 = 0;//清除按键4标志位
+
+        switch (thresholdFlag) {
+        case 0:
+            Threshold.TempThreshold --;//温度阈值-1
+            break;
+		case 1:
+			Threshold.SoilThreshold --;//土壤湿度阈值-1
+            break;
+		case 2:
+			Threshold.LightThreshold -=10;//光照强度阈值-10
+            break;
+        }
+    }
+    //如果标志位小于4 显示第一页
+    if (thresholdFlag < 3) {
+		//阈值设置
+		oled_ShowCHinese(16 * 2, 2 * 0, 8);
+		oled_ShowCHinese(16 * 3, 2 * 0, 9);
+		oled_ShowCHinese(16 * 4, 2 * 0, 10);
+		oled_ShowCHinese(16 * 5, 2 * 0, 11);
+		
+		//温度阈值
+        oled_ShowCHinese(16 * 0, 2 * 1, 25);
+        oled_ShowCHinese(16 * 1, 2 * 1, 26);
+        oled_ShowCHinese(16 * 2, 2 * 1, 8);
+        oled_ShowCHinese(16 * 3, 2 * 1, 9);
+        oled_ShowString(16 * 4, 2 * 1, ":", 16);
+        oled_ShowNum(16 * 5, 2 * 1, Threshold.TempThreshold, 2, 16);//显示温度阈值数据
+		
+        //土壤阈值
+        oled_ShowCHinese(16 * 0, 2 * 2, 20);
+        oled_ShowCHinese(16 * 1, 2 * 2, 21);
+        oled_ShowCHinese(16 * 2, 2 * 2, 8);
+        oled_ShowCHinese(16 * 3, 2 * 2, 9);
+        oled_ShowString(16 * 4, 2 * 2, ":", 16);
+        oled_ShowNum(16 * 5, 2 * 2, Threshold.SoilThreshold, 2, 16);//显示土壤湿度阈值数据
+		
+		//光照阈值
+        oled_ShowCHinese(16 * 0, 2 * 3, 17);
+        oled_ShowCHinese(16 * 1, 2 * 3, 24);
+        oled_ShowCHinese(16 * 2, 2 * 3, 8);
+        oled_ShowCHinese(16 * 3, 2 * 3, 9);
+        oled_ShowString(16 * 4, 2 * 3, ":", 16);
+        oled_ShowNum(16 * 5, 2 * 3, Threshold.LightThreshold, 4, 16);//显示光照强度阈值数据
+	}
+	
+	/*阈值限幅*/
+	
+	//温度
+	if (Threshold.TempThreshold > 99){
+        Threshold.TempThreshold = 99;
+    }
+	if (Threshold.TempThreshold < 1){
+        Threshold.TempThreshold = 0;
+    }
+	//土壤湿度
+    if (Threshold.SoilThreshold > 99){
+        Threshold.SoilThreshold = 99;
+    }
+	if (Threshold.SoilThreshold < 1){
+        Threshold.SoilThreshold = 0;
+    }
+	//光照强度
+    if (Threshold.LightThreshold > 999){
+        Threshold.LightThreshold = 999;
+    }
+	if (Threshold.LightThreshold < 1){
+        Threshold.LightThreshold = 0;
+    }
+}
+
+/****
+手动模式
+****/
+
+void Manual(void)
+{
+    //按下按键2选中
+    if (isKey2) {
+        isKey2 = 0;
+        manualFlag++;
+
+        //限位
+        if (manualFlag >= 4) {
+            manualFlag = 0;
+        }
+		//翻页时清屏
+		if (manualFlag == 3 || manualFlag == 0)
+        {
+            oled_Clear();
+        }
+    }
+
+    //调用光标显示函数
+    Asterisk(manualFlag);
+	
+    //按下按键3状态取反
+    if (isKey3) {
+        isKey3 = 0;
+
+        switch (manualFlag) {
+        case 0:
+            System.Switch1 = !System.Switch1;//继电器-风扇状态取反
+            break;
+		
+		case 1:
+            System.Switch2 = !System.Switch2;//继电器-水泵状态取反
+            break;
+
+        case 2:
+            System.Switch3 = !System.Switch3;//灯光状态取反
+            break;
+		
+		case 3:
+            System.Switch4 = !System.Switch4;//报警状态取反
+            break;
+        }
+    }
+    //如果标志位小于3 显示第一页
+    if (manualFlag < 3) {
+		//手动模式
+		oled_ShowCHinese(16 * 2, 2 * 0, 4);
+		oled_ShowCHinese(16 * 3, 2 * 0, 5);
+		oled_ShowCHinese(16 * 4, 2 * 0, 6);
+		oled_ShowCHinese(16 * 5, 2 * 0, 7);
+		
+		//风扇
+		oled_ShowCHinese(16 * 0, 2 * 1, 28);
+		oled_ShowCHinese(16 * 1, 2 * 1, 29);
+		oled_ShowString(16 * 2, 2 * 1, ":", 16);
+		
+		if (System.Switch1 == 1) {
+			oled_ShowCHinese(16 * 3, 2 * 1, 12);
+			oled_ShowCHinese(16 * 4, 2 * 1, 13);//开启
+		} else {
+			oled_ShowCHinese(16 * 3, 2 * 1, 14);
+			oled_ShowCHinese(16 * 4, 2 * 1, 15);//关闭
+		}
+		
+		//水泵
+		oled_ShowCHinese(16 * 0, 2 * 2, 22);
+		oled_ShowCHinese(16 * 1, 2 * 2, 23);
+		oled_ShowString(16 * 2, 2 * 2, ":", 16);
+		
+		if (System.Switch2 == 1) {
+			oled_ShowCHinese(16 * 3, 2 * 2, 12);
+			oled_ShowCHinese(16 * 4, 2 * 2, 13);//开启
+		} else {
+			oled_ShowCHinese(16 * 3, 2 * 2, 14);
+			oled_ShowCHinese(16 * 4, 2 * 2, 15);//关闭
+		}
+		
+		//灯光
+		oled_ShowCHinese(16 * 0, 2 * 3, 16);
+		oled_ShowCHinese(16 * 1, 2 * 3, 17);
+		oled_ShowString(16 * 2, 2 * 3, ":", 16);
+		
+		if (System.Switch3 == 1) {
+			oled_ShowCHinese(16 * 3, 2 * 3, 12);
+			oled_ShowCHinese(16 * 4, 2 * 3, 13);//开启
+		} else {
+			oled_ShowCHinese(16 * 3, 2 * 3, 14);
+			oled_ShowCHinese(16 * 4, 2 * 3, 15);//关闭
+		}
+	}
+	else{
+		//报警
+		oled_ShowCHinese(16 * 0, 2 * 0, 18);
+		oled_ShowCHinese(16 * 1, 2 * 0, 19);
+		oled_ShowString(16 * 2, 2 * 0, ":", 16);
+		
+		if (System.Switch4 == 1) {
+			oled_ShowCHinese(16 * 3, 2 * 0, 12);
+			oled_ShowCHinese(16 * 4, 2 * 0, 13);//开启
+		} else {
+			oled_ShowCHinese(16 * 3, 2 * 0, 14);
+			oled_ShowCHinese(16 * 4, 2 * 0, 15);//关闭
+		}
+	}
+}
+
+//光标显示函数
+void Asterisk(uint8_t A)
+{
+    if (A == 3 || A == 7) {
+        oled_ShowString(16 * 7, 2 * 0, "*", 16);
+    } else {
+        oled_ShowString(16 * 7, 2 * 0, " ", 16);
+    }
+
+    if (A == 0 || A == 4) {
+        oled_ShowString(16 * 7, 2 * 1, "*", 16);
+    } else {
+        oled_ShowString(16 * 7, 2 * 1, " ", 16);
+    }
+
+    if (A == 1 || A == 5) {
+        oled_ShowString(16 * 7, 2 * 2, "*", 16);
+    } else {
+        oled_ShowString(16 * 7, 2 * 2, " ", 16);
+    }
+
+    if (A == 2 || A == 6) {
+        oled_ShowString(16 * 7, 2 * 3, "*", 16);
+    } else {
+        oled_ShowString(16 * 7, 2 * 3, " ", 16);
+    }
+}
